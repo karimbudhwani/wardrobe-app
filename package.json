@@ -1,0 +1,32 @@
+{
+  "name": "wardrobe-app",
+  "version": "1.0.0",
+  "description": "AI wardrobe & context-aware outfit suggestions",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run",
+    "screenshots": "node scripts/screenshots.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "playwright": "^1.64.1",
+    "supertest": "^7.3.1",
+    "vitest": "^4.1.12"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "express-session": "^1.19.0",
+    "helmet": "^8.3.0",
+    "multer": "^2.4.0",
+    "sql.js": "^1.15.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

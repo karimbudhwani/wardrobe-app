@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Wardrobe: your AI closet</title><link rel="stylesheet" href="/styles.css"><meta name="theme-color" content="#111827"></head>
+<body>
+<section id="auth" class="auth hidden">
+  <div class="auth-card">
+    <h1>👗 Wardrobe</h1><p class="muted">Your closet, digitized. Outfits for the weather and every occasion.</p>
+    <form id="authForm">
+      <input name="name" placeholder="Name (sign up)" autocomplete="name">
+      <input name="email" type="email" placeholder="Email" required autocomplete="email">
+      <input name="password" type="password" placeholder="Password (8+ chars)" required minlength="8" autocomplete="current-password">
+      <div class="row"><button type="submit" data-mode="login">Sign in</button><button type="submit" data-mode="register" class="ghost">Create account</button></div>
+      <button type="button" id="demoBtn" class="link">Try the demo account →</button>
+      <p id="authErr" class="err"></p>
+    </form>
+  </div>
+</section>
+<div id="main" class="hidden">
+  <header><span class="logo">👗 Wardrobe</span><span id="aiBadge" class="badge"></span><button id="logout" class="link">Sign out</button></header>
+  <nav id="tabs">
+    <button data-tab="closet" class="active">Closet</button><button data-tab="suggest">Outfits</button><button data-tab="import">Import</button><button data-tab="tryon">Try-on</button><button data-tab="saved">Saved</button>
+  </nav>
+  <main>
+    <section id="tab-closet">
+      <div class="filters">
+        <input id="fq" placeholder="Search…">
+        <select id="fcat"><option value="">All types</option><option>top</option><option>bottom</option><option value="onepiece">one-piece</option><option>outerwear</option><option>shoes</option><option>accessory</option></select>
+        <select id="fseason"><option value="">Any season</option><option>spring</option><option>summer</option><option>autumn</option><option>winter</option></select>
+        <select id="fform"><option value="">Any formality</option><option value="1">1 casual</option><option value="2">2</option><option value="3">3 smart</option><option value="4">4 formal</option><option value="5">5 black-tie</option></select>
+        <select id="fstyle"><option value="">Any style</option><option>western</option><option>south-asian</option><option>european</option><option>east-asian</option><option>african</option><option>middle-eastern</option></select>
+        <input id="fcolor" placeholder="Color">
+      </div>
+      <p id="count" class="muted"></p>
+      <div id="grid" class="grid"></div>
+    </section>
+    <section id="tab-suggest" class="hidden">
+      <form id="ctxForm" class="card ctx">
+        <label>Occasion<input id="event" list="eventList" placeholder="e.g. Diwali, church, black-tie, Oktoberfest" value="Casual day out"></label>
+        <datalist id="eventList"></datalist>
+        <div id="eventChips" class="chips"></div>
+        <label>Location<div class="row"><input id="loc" placeholder="City (or use my location)"><button type="button" id="geo" class="ghost" title="Use current location">📍</button></div></label>
+        <label>Date<input id="date" type="date"></label>
+        <label class="inline"><input type="checkbox" id="useWeather" checked> Use weather forecast</label>
+        <button type="submit">Suggest top 3 outfits</button>
+      </form>
+      <div id="ctxSummary"></div>
+      <div id="outfits"></div>
+      <div id="shopping"></div>
+    </section>
+    <section id="tab-import" class="hidden">
+      <div class="card">
+        <h2>Import your closet</h2>
+        <p class="muted">Pick photos from your camera roll. Each garment gets detected, cut out and tagged. <span id="importMode"></span></p>
+        <label class="drop" id="drop"><input id="photos" type="file" accept="image/*" multiple><span>📷 Tap to choose photos or drop them here</span></label>
+        <input id="hint" placeholder="Optional hint, e.g. 'navy wool coat' (helps demo mode)">
+        <button id="importBtn">Import</button>
+        <p id="importMsg" class="muted"></p>
+        <div id="imported" class="grid"></div>
+        <hr><button id="seedBtn" class="ghost">Load sample closet (29 items)</button>
+      </div>
+    </section>
+    <section id="tab-tryon" class="hidden">
+      <div class="card">
+        <h2>Virtual try-on</h2>
+        <p class="muted">Upload a full-body photo of yourself, select items (or send an outfit from the Outfits tab), then render.</p>
+        <div class="tryon">
+          <div><img id="selfie" class="selfie" alt=""><label class="drop small"><input id="selfieFile" type="file" accept="image/*"><span>Upload your photo</span></label></div>
+          <div><h3>Selected items</h3><div id="tryItems" class="mini"></div><button id="renderBtn">Render me in this outfit</button><p id="tryMsg" class="muted"></p></div>
+        </div>
+        <img id="render" class="render hidden" alt="Try-on render">
+      </div>
+    </section>
+    <section id="tab-saved" class="hidden"><div id="saved"></div></section>
+  </main>
+</div>
+<dialog id="itemDlg"><form method="dialog" id="itemForm"></form></dialog>
+<script src="/app.js"></script>
+</body></html>
