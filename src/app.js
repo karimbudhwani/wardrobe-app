@@ -81,7 +81,13 @@ async function createApp(opts = {}) {
     if (season) items = items.filter(i => i.seasons.includes(season));
     if (formality) items = items.filter(i => i.formality === +formality);
     if (style) items = items.filter(i => i.cultural_style === style);
-    if (q) { const s = q.toLowerCase(); items = items.filter(i => [i.name, i.type, i.fabric, i.pattern, i.color].join(' ').toLowerCase().includes(s)); }
+    if (q) {
+      const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+      items = items.filter(i => {
+        const words = [i.name, i.type, i.fabric, i.pattern, i.color].join(' ').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+        return terms.every(t => words.some(w => w.startsWith(t)));
+      });
+    }
     res.json(items);
   });
   app.post('/api/items/seed', auth, async (req, res) => res.json({ added: await seedUser(db, req.uid) }));
