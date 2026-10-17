@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import request from 'supertest';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 const { createApp } = require('../src/app');
+const { createMemoryDb } = require('./memory-db');
+const { seedUser } = require('../src/seed');
 const { suggestOutfits } = require('../src/recommend');
 const { findEvent } = require('../src/events');
 const { SAMPLE } = require('../src/seed');
@@ -19,9 +18,9 @@ const mockFetch = rain => async url => ({
 let app, rainApp;
 beforeAll(async () => {
   delete process.env.OPENAI_API_KEY;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wt-'));
-  app = await createApp({ dbFile: null, dataDir: dir, fetchImpl: mockFetch(false), authLimit: 1000 });
-  rainApp = await createApp({ dbFile: null, dataDir: dir + 'r', fetchImpl: mockFetch(true), authLimit: 1000 });
+  const opts = { sessionSecret: 'test-secret', authLimit: 1000 };
+  app = await createApp({ ...opts, db: createMemoryDb(), fetchImpl: mockFetch(false) });
+  rainApp = await createApp({ ...opts, db: createMemoryDb(), fetchImpl: mockFetch(true) });
 });
 const signup = async (a = app, email = `u${Math.random()}@x.com`) => { const ag = request.agent(a); await ag.post('/api/auth/register').send({ email, password: 'password123' }).expect(200); return ag; };
 
@@ -130,5 +129,46 @@ describe('outfits & try-on', () => {
     const img = await ag.get(r.body.url).expect(200);
     expect(img.headers['content-type']).toContain('svg');
     expect((await ag.get('/api/outfits')).body[0].render).toBe(r.body.url);
+  });
+});
+
+describe('stateless sessions', () => {
+  it('sets a signed httpOnly wsid cookie and rejects tampered ones', async () => {
+    const r = await request(app).post('/api/auth/register').send({ email: `s${Math.random()}@x.com`, password: 'password123' }).expect(200);
+    const c = r.headers['set-cookie'].find(h => h.startsWith('wsid='));
+    expect(c).toMatch(/HttpOnly/i); expect(c).toMatch(/SameSite=Lax/i); expect(c).toMatch(/Max-Age=1209600/);
+    const tok = c.split(';')[0];
+    await request(app).get('/api/me').set('Cookie', tok).expect(200);
+    await request(app).get('/api/me').set('Cookie', tok.slice(0, -2) + 'xx').expect(401);
+    // a session survives across app instances that share SESSION_SECRET (as on serverless)
+    const other = await createApp({ sessionSecret: 'test-secret', db: createMemoryDb() });
+    await request(other).get('/api/items').set('Cookie', tok).expect(200);
+    const wrong = await createApp({ sessionSecret: 'other-secret', db: createMemoryDb() });
+    await request(wrong).get('/api/items').set('Cookie', tok).expect(401);
+  });
+});
+
+describe('photo storage', () => {
+  it('stores uploads under <userId>/<randomhex> and serves them back', async () => {
+    const db = createMemoryDb();
+    const a = await createApp({ sessionSecret: 'x', db, authLimit: 1000 });
+    const ag = request.agent(a);
+    const reg = await ag.post('/api/auth/register').send({ email: 'p@x.com', password: 'password123', seed: false }).expect(200);
+    const s = await ag.post('/api/selfie').attach('photo', PNG, { filename: 'me.png', contentType: 'image/png' }).expect(200);
+    const row = db.tables.photos.find(p => p.id === s.body.id);
+    expect(row.storage_path).toMatch(new RegExp(`^${reg.body.id}/[0-9a-f]{32}$`));
+    const img = await ag.get(s.body.url).expect(200);
+    expect(img.headers['content-type']).toContain('image/png');
+    expect(Buffer.compare(img.body, PNG)).toBe(0);
+  });
+});
+
+describe('seeding', () => {
+  it('re-seeding with onlyMissing is idempotent', async () => {
+    const db = createMemoryDb();
+    const id = await db.createUser({ email: 'd@x.com', password_hash: 'h', name: 'D' });
+    expect(await seedUser(db, id, { onlyMissing: true })).toBe(SAMPLE.length);
+    expect(await seedUser(db, id, { onlyMissing: true })).toBe(0);
+    expect((await db.listItems(id)).length).toBe(SAMPLE.length);
   });
 });

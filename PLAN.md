@@ -3,12 +3,12 @@
 Inspired by https://x.com/cdngdev/status/2076812846793650485: an AI went through a camera roll, pulled out every clothing item into a visual wardrobe, suggested new outfits, and rendered them on the user with an image model.
 
 ## Stack
-- **Backend:** Node 20 + Express. Pure JS/WASM dependencies only, so there's no native build step: `sql.js` (SQLite compiled to WASM, saved to `data/wardrobe.db`), `bcryptjs`, `express-session`, `multer`, `helmet`, `express-rate-limit`.
+- **Backend:** Node 20 + Express, deployed as a single Vercel serverless function (`api/index.js`). Data in Supabase Postgres and photos in a private Supabase Storage bucket, both via `@supabase/supabase-js` over HTTPS with the service-role key (server-side only). Stateless sessions: a signed JWT in an httpOnly `wsid` cookie. Also `bcryptjs`, `multer` (memory storage), `helmet`, `express-rate-limit`. (v1 used sql.js + local disk + express-session.)
 - **Frontend:** a single-page app with no build step, using vanilla JS and CSS. It's mobile-first and responsive.
 - **Tests:** Vitest + Supertest for the API flows. Screenshots come from headless Playwright.
 - **Deploy:** any Node host (Render, Fly, Railway, a VPS). The demo runs on the box behind a Cloudflare quick tunnel, which needs no account.
 
-## Data model (SQLite)
+## Data model (Postgres, see `supabase/schema.sql`; `photos.file` is now `photos.storage_path`)
 - `users(id, email UNIQUE, password_hash, name, created_at)`
 - `photos(id, user_id, kind['closet'|'selfie'|'render'], file, mime, created_at)`: the original uploads, kept private.
 - `items(id, user_id, photo_id NULL, svg NULL, bbox JSON NULL, name, type, category[top|bottom|onepiece|outerwear|shoes|accessory], color, color_hex, pattern, fabric, seasons JSON, formality 1-5, cultural_style, modest 0/1, waterproof 0/1, created_at)`. The cutout is the photo plus a normalized bbox (cropped with CSS), or the seed SVG.

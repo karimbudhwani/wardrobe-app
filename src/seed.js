@@ -54,11 +54,19 @@ const SAMPLE = [
   I('Red silk dupatta', 'dupatta', 'accessory', 'accessory', 'red', '#dc2626', 'embroidered', 'silk', ['autumn', 'winter', 'spring'], 4, 'south-asian'),
   I('Grey wool scarf', 'scarf', 'accessory', 'accessory', 'grey', '#6b7280', 'solid', 'wool', ['winter', 'autumn'], 2),
 ];
-function seedUser(db, userId) {
-  for (const it of SAMPLE) {
-    db.run(`INSERT INTO items(user_id, svg, name, type, category, color, color_hex, pattern, fabric, seasons, formality, cultural_style, modest, waterproof) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [userId, svgFor(it.shape, it.color_hex, it.pattern), it.name, it.type, it.category, it.color, it.color_hex, it.pattern, it.fabric, JSON.stringify(it.seasons), it.formality, it.cultural_style, it.modest, it.waterproof]);
+const sampleRow = (userId, it) => ({
+  user_id: userId, svg: svgFor(it.shape, it.color_hex, it.pattern), name: it.name, type: it.type, category: it.category,
+  color: it.color, color_hex: it.color_hex, pattern: it.pattern, fabric: it.fabric, seasons: JSON.stringify(it.seasons),
+  formality: it.formality, cultural_style: it.cultural_style, modest: it.modest, waterproof: it.waterproof,
+});
+// Inserts the sample closet for a user via the data layer (one bulk insert).
+// opts.onlyMissing: skip sample items the user already has (idempotent re-seed).
+async function seedUser(db, userId, opts = {}) {
+  let list = SAMPLE;
+  if (opts.onlyMissing) {
+    const have = new Set(await db.listSeedItemNames(userId));
+    list = SAMPLE.filter(it => !have.has(it.name));
   }
-  return SAMPLE.length;
+  return db.insertItems(list.map(it => sampleRow(userId, it)));
 }
-module.exports = { seedUser, SAMPLE, svgFor };
+module.exports = { seedUser, sampleRow, SAMPLE, svgFor };
