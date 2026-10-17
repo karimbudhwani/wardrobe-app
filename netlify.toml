@@ -1,0 +1,14 @@
+[build]
+  command = "npm install"
+  publish = "public"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Existing files in publish (public/) are served first by Netlify CDN.
+# Everything else (API routes, unknown paths) is rewritten to the Express function.
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/api"
+  status = 200
