@@ -43,12 +43,50 @@ const EVENTS = [
   E('african-wedding', 'West African wedding', 'African', { formality: [4, 5], favor: ['gold', 'purple', 'green', 'orange'], style: 'traditional', culture: 'african', keywords: ['aso ebi', 'nigerian wedding'], notes: 'Aso-ebi coordinated colors, bold prints.' }),
 ];
 
-function findEvent(input) {
-  if (!input) return EVENTS.find(e => e.id === 'casual');
-  const q = String(input).toLowerCase().trim();
-  return EVENTS.find(e => e.id === q) || EVENTS.find(e => e.name.toLowerCase() === q)
-    || EVENTS.find(e => e.keywords.some(k => q.includes(k)))
-    || EVENTS.find(e => q.includes(e.id.replace(/-/g, ' ')) || q.includes(e.name.toLowerCase().split(' ')[0]))
-    || { ...EVENTS.find(e => e.id === 'casual'), id: 'custom', name: input, notes: 'Custom occasion, treated as smart-casual.' , formality: [2, 3] };
+// ---- Matching: whole words/phrases only (Unicode-aware), most specific alias wins, ties are ambiguous.
+const norm = s => String(s).normalize('NFKD').replace(/\p{M}/gu, '')
+  .toLowerCase().replace(/['’]s(?![\p{L}\p{N}])/gu, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const wordRe = a => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(a)}(?![\\p{L}\\p{N}])`, 'u');
+const EXTRA_ALIASES = {
+  nikah: ['muslim wedding', 'islamic wedding'], 'african-wedding': ['west african wedding', 'yoruba wedding', 'igbo wedding'],
+  'black-tie': ['black tie'], 'st-patricks': ['st patrick', 'saint patrick', 'st patricks day'], 'lunar-new-year': ['tet holiday', 'tet festival'],
+};
+const STOP = new Set(['the', 'my', 'a', 'an', 'day', 'party', 'service', 'festival', 'night', 'visit', 'ceremony', 'and', 'of', 'to', 'for', 'in', 'at']);
+const ALIASES = EVENTS.map(e => {
+  const names = new Set([e.id.replace(/-/g, ' '), e.name, ...e.name.split(/[/(),]/)].map(norm).filter(a => a.length >= 3));
+  const set = new Set([...names, ...[...e.keywords, ...(EXTRA_ALIASES[e.id] || [])].map(norm).filter(a => a.length >= 3)]);
+  return { e, aliases: [...set].map(a => ({ a, re: wordRe(a), tokens: a.split(' ').length, isName: names.has(a) })) };
+});
+const CASUAL = EVENTS.find(e => e.id === 'casual');
+const custom = input => ({ ...CASUAL, id: 'custom', name: String(input), notes: 'Custom occasion, treated as smart-casual.', formality: [2, 3] });
+const brief = e => ({ id: e.id, name: e.name });
+
+function matchEvent(input) {
+  if (input == null || !String(input).trim()) return { event: CASUAL, status: 'default', matched: null, candidates: [] };
+  const q = norm(input);
+  if (!q) return { event: null, status: 'none', matched: null, candidates: [] };
+  const exact = EVENTS.find(e => norm(e.id) === q || norm(e.name) === q);
+  if (exact) return { event: exact, status: 'exact', matched: q, candidates: [] };
+  const hits = [];
+  for (const { e, aliases } of ALIASES) for (const al of aliases) if (al.a === q || al.re.test(q)) hits.push({ e, ...al });
+  if (hits.length) {
+    hits.sort((x, y) => (y.tokens - x.tokens) || (y.a.length - x.a.length));
+    const top = hits[0];
+    const rival = hits.find(h => h.e.id !== top.e.id && h.tokens === top.tokens && h.a.length === top.a.length);
+    // Several different events named in one input ("Diwali and Eid party") → ask.
+    const others = [...new Map(hits.filter(h => h.e.id !== top.e.id && h.isName && !wordRe(h.a).test(top.a)).map(h => [h.e.id, h.e])).values()];
+    if (rival || others.length) return { event: null, status: 'ambiguous', matched: null, candidates: [top.e, ...others].slice(0, 5).map(brief) };
+    return { event: top.e, status: 'alias', matched: top.a, candidates: [] };
+  }
+  const toks = new Set(q.split(' ').filter(t => !STOP.has(t)));
+  const candidates = ALIASES.filter(({ aliases }) => aliases.some(al => al.a.split(' ').some(t => toks.has(t)))).slice(0, 5).map(x => brief(x.e));
+  return { event: null, status: 'none', matched: null, candidates };
 }
-module.exports = { EVENTS, findEvent };
+
+// Backward-compatible: unmatched/ambiguous input becomes a custom smart-casual occasion.
+function findEvent(input) {
+  const m = matchEvent(input);
+  return (m.status === 'none' || m.status === 'ambiguous') ? custom(input) : m.event;
+}
+module.exports = { EVENTS, findEvent, matchEvent, custom, norm };

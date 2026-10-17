@@ -91,26 +91,49 @@ function editItem(it) {
 $('#eventChips').onclick = e => { if (e.target.classList.contains('chip')) { $('#event').value = e.target.textContent; } };
 $('#geo').onclick = () => navigator.geolocation?.getCurrentPosition(p => { $('#loc').value = ''; $('#loc').dataset.lat = p.coords.latitude; $('#loc').dataset.lon = p.coords.longitude; $('#loc').placeholder = '📍 Current location'; }, () => alert('Location unavailable; type a city instead.'));
 $('#loc').oninput = () => { delete $('#loc').dataset.lat; delete $('#loc').dataset.lon; };
-$('#ctxForm').onsubmit = async e => {
-  e.preventDefault(); $('#outfits').innerHTML = '<p class="muted">Thinking…</p>';
-  const body = { event: $('#event').value, date: $('#date').value, useWeather: $('#useWeather').checked, q: $('#loc').value || undefined, lat: $('#loc').dataset.lat, lon: $('#loc').dataset.lon };
+const settingVal = () => document.querySelector('input[name=setting]:checked')?.value || 'outdoor';
+document.querySelectorAll('input[name=setting]').forEach(r => r.onchange = () => { const indoor = settingVal() === 'indoor'; $('#useWeather').disabled = !indoor; if (!indoor) $('#useWeather').checked = false; });
+async function runSuggest(extra = {}) {
+  $('#outfits').innerHTML = '<p class="muted">Thinking…</p>';
+  const body = { event: $('#event').value, date: $('#date').value, setting: settingVal(), useWeather: $('#useWeather').checked, q: $('#loc').value || undefined, lat: $('#loc').dataset.lat, lon: $('#loc').dataset.lon, ...extra };
   if (!body.q && !body.lat) body.q = undefined;
   try { lastSuggest = await api('/api/suggest', { method: 'POST', body }); renderSuggest(lastSuggest); } catch (err) { $('#outfits').innerHTML = `<p class="err">${esc(err.message)}</p>`; }
-};
+}
+$('#ctxForm').onsubmit = e => { e.preventDefault(); runSuggest(); };
+function weatherCard(r) {
+  const w = r.weather;
+  if (!r.weatherApplies) return r.setting === 'indoor' ? '<span class="muted">Indoor: weather not used</span>' : 'Weather off';
+  if (!w) return 'Weather off';
+  const src = w.estimate ? `<span class="tag est">Estimate</span><span class="muted">${esc(w.note || '')}</span>` : w.source === 'open-meteo' ? '<span class="muted">Open-Meteo forecast</span>' : `<span class="muted">${esc(w.note || '')}</span>`;
+  const heat = w.heat && w.heat.level >= 1 ? `<span class="tag heat">🔥 feels ${esc(w.heat.feelsMax)}°C</span>` : '';
+  return `<b>${Math.round(w.tmin)}–${Math.round(w.tmax)}°C</b><span>${esc(w.location)} · ${esc(w.date)}</span>${heat}${w.conditions.map(c => `<span class="tag">${esc(c)}</span>`).join('')}<span class="tag">💧${esc(w.precipProb)}%</span><span class="tag">💨${Math.round(w.wind)} km/h</span>${src}<span class="muted attrib">Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a></span>`;
+}
 function renderSuggest(r) {
-  const w = r.weather, ev = r.event;
-  $('#ctxSummary').innerHTML = `<div class="card"><div class="wx">${w ? `<b>${Math.round(w.tmin)}–${Math.round(w.tmax)}°C</b><span>${esc(w.location)} · ${esc(w.date)}</span>${w.conditions.map(c => `<span class="tag">${c}</span>`).join('')}<span class="tag">💧${w.precipProb}%</span><span class="tag">💨${Math.round(w.wind)} km/h</span><span class="muted">${w.source === 'open-meteo' ? 'Open-Meteo forecast' : esc(w.note || 'Seasonal estimate')}</span>` : 'Weather off'}</div>
+  if (r.needsEvent) {
+    const m = r.eventMatch || {}; const x = m.input || $('#event').value;
+    $('#ctxSummary').innerHTML = '';
+    $('#outfits').innerHTML = `<div class="card"><p>We couldn't match “${esc(x)}”.${m.candidates?.length ? ' Did you mean:' : ''}</p>
+      <div class="chips">${(m.candidates || []).map(c => `<button type="button" class="chip" data-pick="${esc(c.name)}">${esc(c.name)}</button>`).join('')}</div>
+      <div class="row"><button type="button" class="ghost" data-custom="1">Use “${esc(x)}” as a custom smart-casual occasion</button></div></div>`;
+    $('#shopping').innerHTML = '';
+    return;
+  }
+  const ev = r.event;
+  $('#ctxSummary').innerHTML = `<div class="card"><div class="wx">${weatherCard(r)}</div>
     <p><b>${esc(ev.name)}</b> <span class="muted">(${esc(ev.tradition)})</span>: ${esc(ev.notes)}</p>
     <div class="tags">${ev.favor.map(c => `<span class="tag">✓ ${esc(c)}</span>`).join('')}${ev.avoid.map(c => `<span class="tag" style="background:#fee2e2">✗ ${esc(c)}</span>`).join('')}${ev.modest ? '<span class="tag">modest</span>' : ''}<span class="tag">${esc(ev.style)}</span></div></div>`;
-  $('#outfits').innerHTML = r.outfits.map((o, k) => `<div class="outfit"><h3><span class="rank">${k + 1}</span>${esc(o.items[0].name)} look</h3>
+  $('#outfits').innerHTML = (r.outfits.map((o, k) => `<div class="outfit"><h3><span class="rank">${k + 1}</span>${esc(o.items[0].name)} look${o.warnings?.includes('heat') ? ' <span class="tag heat">⚠ heat</span>' : ''}</h3>
     <div class="pieces">${o.items.map(i => `<div class="piece">${thumb(i)}${esc(i.name)}</div>`).join('')}</div>
-    <p>${esc(o.reason)}</p><p class="fallback">↪ ${esc(o.fallback)}</p>
-    <div class="row"><button class="ghost" data-save="${k}">Save outfit</button><button data-try="${k}">Try it on</button></div></div>`).join('') || '<p class="muted">Add tops/bottoms or one-pieces to get suggestions.</p>';
+    <p${o.warnings?.length ? ' class="warn-reason"' : ''}>${esc(o.reason)}</p>${o.colorNotes?.length ? `<p class="muted">🎨 ${esc(o.colorNotes.join('; '))}</p>` : ''}<p class="fallback">↪ ${esc(o.fallback)}</p>
+    <div class="row"><button class="ghost" data-save="${k}">Save outfit</button><button data-try="${k}">Try it on</button></div></div>`).join('') || '<p class="muted">Add tops/bottoms or one-pieces to get suggestions.</p>')
+    + (r.transitLayer ? `<div class="card"><p>🧥 ${esc(r.transitLayer.why)}: bring your <b>${esc(r.transitLayer.item)}</b>.</p></div>` : '');
   $('#shopping').innerHTML = r.shopping.length ? `<div class="card"><h3>🛍️ Optional items to buy</h3>${r.shopping.map(s => `<p><b>${esc(s.item)}</b>: <span class="muted">${esc(s.why)}</span></p>`).join('')}</div>` : '';
 }
 $('#outfits').onclick = async e => {
+  if (e.target.dataset.pick) { $('#event').value = e.target.dataset.pick; return runSuggest(); }
+  if (e.target.dataset.custom) return runSuggest({ confirmCustom: true });
   const s = e.target.dataset.save, t = e.target.dataset.try;
-  if (s != null) { const o = lastSuggest.outfits[s]; await api('/api/outfits', { method: 'POST', body: { itemIds: o.itemIds, reason: o.reason, context: { event: lastSuggest.event.name, weather: lastSuggest.weather && { location: lastSuggest.weather.location, date: lastSuggest.weather.date, conditions: lastSuggest.weather.conditions } } } }); e.target.textContent = 'Saved ✓'; }
+  if (s != null) { const o = lastSuggest.outfits[s]; await api('/api/outfits', { method: 'POST', body: { itemIds: o.itemIds, reason: o.reason, context: { event: lastSuggest.event.name, setting: lastSuggest.setting, weather: lastSuggest.weather && { location: lastSuggest.weather.location, date: lastSuggest.weather.date, conditions: lastSuggest.weather.conditions } } } }); e.target.textContent = 'Saved ✓'; }
   if (t != null) { selected = new Set(lastSuggest.outfits[t].itemIds); showTab('tryon'); }
 };
 

@@ -40,7 +40,11 @@
         <div id="eventChips" class="chips"></div>
         <label>Location<div class="row"><input id="loc" placeholder="City (or use my location)"><button type="button" id="geo" class="ghost" title="Use current location">📍</button></div></label>
         <label>Date<input id="date" type="date"></label>
-        <label class="inline"><input type="checkbox" id="useWeather" checked> Use weather forecast</label>
+        <fieldset class="setting"><legend>Setting</legend>
+          <label class="inline"><input type="radio" name="setting" value="outdoor" checked> Outdoor</label>
+          <label class="inline"><input type="radio" name="setting" value="indoor"> Indoor</label>
+          <label class="inline"><input type="checkbox" id="useWeather" disabled> Also consider weather (indoor)</label>
+        </fieldset>
         <button type="submit">Suggest top 3 outfits</button>
       </form>
       <div id="ctxSummary"></div>

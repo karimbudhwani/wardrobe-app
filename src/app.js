@@ -7,8 +7,8 @@ const path = require('path');
 const { createSupabaseDb, newStoragePath } = require('./db');
 const { createSessions } = require('./session');
 const { seedUser } = require('./seed');
-const { EVENTS, findEvent } = require('./events');
-const { getWeather } = require('./weather');
+const { EVENTS, matchEvent, custom } = require('./events');
+const { getWeather, validDate } = require('./weather');
 const { suggestOutfits } = require('./recommend');
 const ai = require('./ai');
 
@@ -20,6 +20,7 @@ async function createApp(opts = {}) {
   const db = opts.db || createSupabaseDb();
   const sessions = createSessions({ secret: opts.sessionSecret });
   const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  const weatherCache = opts.weatherCache || new Map();
 
   const app = express();
   app.set('trust proxy', 1);
@@ -139,16 +140,36 @@ async function createApp(opts = {}) {
   // ---- context
   app.get('/api/events', (_req, res) => res.json(EVENTS));
   app.get('/api/weather', auth, async (req, res) => {
-    try { res.json(await getWeather(req.query, fetchImpl)); } catch (e) { res.status(400).json({ error: e.message }); }
+    try { res.json(await getWeather(req.query, fetchImpl, { cache: weatherCache })); } catch (e) { res.status(400).json({ error: e.message }); }
   });
   app.post('/api/suggest', auth, async (req, res) => {
-    const { event, q, lat, lon, date, useWeather = true } = req.body || {};
+    const { event, q, lat, lon, date, setting, useWeather, confirmCustom } = req.body || {};
+    if (setting != null && setting !== 'indoor' && setting !== 'outdoor') return res.status(400).json({ error: "setting must be 'indoor' or 'outdoor'" });
+    if (date != null && date !== '' && !validDate(date)) return res.status(400).json({ error: 'Invalid date' });
+    // Legacy clients (no setting): weather on unless useWeather === false. Outdoor: always. Indoor: explicit opt-in only.
+    const weatherApplies = setting === 'outdoor' ? true : setting === 'indoor' ? useWeather === true : !!(useWeather ?? true);
+    const hasLocation = !!q || (lat != null && lat !== '');
+    const eventMatch = matchEvent(event);
+    if ((eventMatch.status === 'none' || eventMatch.status === 'ambiguous') && confirmCustom !== true) {
+      return res.json({ needsEvent: true, eventMatch: { ...eventMatch, input: event }, event: null, weather: null, outfits: [], shopping: [], setting: setting || null, weatherApplies, transitLayer: null });
+    }
+    const ev = eventMatch.event || custom(event);
     let weather = null;
-    if (useWeather) { try { weather = await getWeather({ q, lat, lon, date }, fetchImpl); } catch (e) { return res.status(400).json({ error: e.message }); } }
-    const ev = findEvent(event);
+    if (weatherApplies || (setting === 'indoor' && hasLocation)) {
+      try { weather = await getWeather({ q, lat, lon, date: date || undefined }, fetchImpl, { cache: weatherCache }); } catch (e) { return res.status(e.status || 400).json({ error: e.expose ? e.message : 'Weather lookup failed' }); }
+    }
     const items = (await db.listItems(req.uid)).map(shapeItem);
-    const { outfits, shopping } = suggestOutfits(items, { event: ev, weather });
-    res.json({ event: ev, weather, outfits, shopping });
+    const ctx = { event: ev, weather, weatherApplies, setting: setting || null };
+    const { outfits, shopping } = suggestOutfits(items, ctx);
+    let transitLayer = null;
+    const cond = weather?.conditions || [];
+    if (setting === 'indoor' && !weatherApplies && weather && cond.some(c => ['cold', 'freezing', 'rainy', 'windy'].includes(c))) {
+      const outer = items.filter(i => i.category === 'outerwear');
+      const best = (cond.includes('rainy') && outer.find(i => i.waterproof)) || outer.find(i => !cond.includes('rainy') || i.waterproof) || outer[0];
+      const hint = cond.includes('rainy') ? 'a packable rain jacket' : 'a warm coat';
+      transitLayer = { item: best ? best.name : hint, itemId: best ? best.id : null, why: `For the way there: ${Math.round(weather.tmin)}–${Math.round(weather.tmax)}°C, ${cond.join(', ')}` };
+    }
+    res.json({ event: ev, eventMatch: { ...eventMatch, event: undefined, input: event ?? null }, weather, outfits, shopping, setting: setting || null, weatherApplies, transitLayer });
   });
   app.post('/api/outfits', auth, async (req, res) => {
     const { itemIds = [], context = {}, reason = '' } = req.body || {};
